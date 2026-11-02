@@ -18,12 +18,42 @@ const PRECISION = 10
 /** 対応する文字の範囲の印。JIS があると Word などの日本語フォント欄に出る。 */
 const CODE_PAGE_LATIN = 1
 const CODE_PAGE_JIS = 1 << 17
+/** プレビューと同じ大きさで書き出すときの、1文字の枠の余白(3%) */
+const FIT_PAD = 30
 
 type IntPath = { X: number; Y: number }[]
 
-const toInt = (p: Vec) => ({
-  X: Math.round(p.x * UNIT * PRECISION),
-  Y: Math.round((BASELINE_Y - p.y) * UNIT * PRECISION),
+/** 全文字に同じようにかける拡大と移動。bearing は英数字の左右の余白。 */
+interface Placement {
+  scale: number
+  dx: number
+  dy: number
+  bearing: number
+}
+
+const AS_DRAWN: Placement = { scale: 1, dx: 0, dy: 0, bearing: BEARING }
+
+/** 全文字を合わせた範囲が1文字の枠に収まる配置。倍率が共通なので、文字どうしの大きさの比と線の太さの比は変わらない。 */
+function fitPlacement(glyphs: Record<string, Drawing>): Placement {
+  const boxes = Object.values(glyphs).flatMap((d) => drawingBounds(d) ?? [])
+  if (boxes.length === 0) return AS_DRAWN
+  const minX = Math.min(...boxes.map((b) => b.minX))
+  const maxX = Math.max(...boxes.map((b) => b.maxX))
+  const minY = Math.min(...boxes.map((b) => b.minY))
+  const maxY = Math.max(...boxes.map((b) => b.maxY))
+  const size = Math.max(maxX - minX, maxY - minY, 0.001) * UNIT
+  const scale = (EM - FIT_PAD * 2) / size
+  return {
+    scale,
+    dx: -((minX + maxX) / 2) * UNIT * scale,
+    dy: (BASELINE_Y - (BASELINE_Y - (minY + maxY) / 2) * scale) * UNIT,
+    bearing: FIT_PAD,
+  }
+}
+
+const toInt = (p: Vec, scale: number) => ({
+  X: Math.round(p.x * UNIT * scale * PRECISION),
+  Y: Math.round((BASELINE_Y - p.y) * UNIT * scale * PRECISION),
 })
 
 function union(paths: IntPath[], fill: ClipperLib.PolyFillType): IntPath[] {
@@ -35,36 +65,37 @@ function union(paths: IntPath[], fill: ClipperLib.PolyFillType): IntPath[] {
 }
 
 /** 線の太さと塗りをすべて1つの輪郭に合体させる。透明な線は輪郭に入れない。 */
-export function outline(d: Drawing): IntPath[] {
+export function outline(d: Drawing, scale = 1): IntPath[] {
   const parts: IntPath[] = []
   for (const f of d.fills) {
-    parts.push(...union(f.rings.map((r) => r.map(toInt)), ClipperLib.PolyFillType.pftEvenOdd))
+    parts.push(...union(f.rings.map((r) => r.map((p) => toInt(p, scale))), ClipperLib.PolyFillType.pftEvenOdd))
   }
   for (const s of d.strokes) {
     if (isClear(s)) continue
     const offset = new ClipperLib.ClipperOffset(2, PRECISION / 2)
-    offset.AddPath(strokePoints(s).map(toInt), ClipperLib.JoinType.jtRound, ClipperLib.EndType.etOpenRound)
+    offset.AddPath(strokePoints(s).map((p) => toInt(p, scale)), ClipperLib.JoinType.jtRound, ClipperLib.EndType.etOpenRound)
     const out: IntPath[] = []
-    offset.Execute(out, (s.width / 2) * UNIT * PRECISION)
+    offset.Execute(out, (s.width / 2) * UNIT * scale * PRECISION)
     parts.push(...out)
   }
   const merged = union(parts, ClipperLib.PolyFillType.pftNonZero)
   return ClipperLib.Clipper.CleanPolygons(merged, PRECISION * 0.3) as IntPath[]
 }
 
-function glyphFor(char: string, drawing: Drawing): opentype.Glyph {
-  const paths = outline(drawing)
+function glyphFor(char: string, drawing: Drawing, place: Placement): opentype.Glyph {
+  const { scale, dx, dy, bearing } = place
+  const paths = outline(drawing, scale)
   // 文字の幅は透明な線まで含めた範囲で決まる
   const area = drawingBounds(drawing)
-  const minX = (area?.minX ?? 0) * UNIT
-  const maxX = (area?.maxX ?? 0) * UNIT
+  const minX = (area?.minX ?? 0) * UNIT * scale + dx
+  const maxX = (area?.maxX ?? 0) * UNIT * scale + dx
   const proportional = setOf(char).proportional && area !== null
-  const shift = proportional ? BEARING - minX : EM / 2
+  const shift = proportional ? bearing - minX : EM / 2
   const path = new opentype.Path()
   for (const ring of paths) {
     ring.forEach((p, i) => {
-      const x = Math.round(p.X / PRECISION + shift)
-      const y = Math.round(p.Y / PRECISION)
+      const x = Math.round(p.X / PRECISION + dx + shift)
+      const y = Math.round(p.Y / PRECISION + dy)
       if (i) path.lineTo(x, y)
       else path.moveTo(x, y)
     })
@@ -74,7 +105,7 @@ function glyphFor(char: string, drawing: Drawing): opentype.Glyph {
   return new opentype.Glyph({
     name: `uni${code.toString(16).toUpperCase().padStart(4, '0')}`,
     unicode: code,
-    advanceWidth: proportional ? Math.round(maxX - minX + BEARING * 2) : EM,
+    advanceWidth: proportional ? Math.round(maxX - minX + bearing * 2) : EM,
     path,
   })
 }
@@ -100,13 +131,14 @@ export function latinFamily(name: string): string {
   return /^[\x20-\x7e]+$/.test(name) ? name : `YUI Font ${nameHash(name)}`
 }
 
-export function buildFont(name: string, glyphs: Record<string, Drawing>): ArrayBuffer {
+export function buildFont(name: string, glyphs: Record<string, Drawing>, fit = false): ArrayBuffer {
+  const place = fit ? fitPlacement(glyphs) : AS_DRAWN
   const list = [
     new opentype.Glyph({ name: '.notdef', advanceWidth: EM / 2, path: new opentype.Path() }),
     new opentype.Glyph({ name: 'space', unicode: 0x20, advanceWidth: 300, path: new opentype.Path() }),
     new opentype.Glyph({ name: 'uni3000', unicode: 0x3000, advanceWidth: EM, path: new opentype.Path() }),
   ]
-  for (const char of Object.keys(glyphs).sort()) list.push(glyphFor(char, glyphs[char]))
+  for (const char of Object.keys(glyphs).sort()) list.push(glyphFor(char, glyphs[char], place))
   const family = name.trim() || 'YUI Font'
   const latin = latinFamily(family)
   const boxes = list.map((g) => g.getBoundingBox())

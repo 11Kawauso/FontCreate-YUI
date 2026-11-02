@@ -53,4 +53,6 @@ export interface Settings {
   mirrorY: boolean
   chain: boolean
   inputMode: InputMode
+  /** フォントを、全文字を合わせた範囲が1文字の枠に収まる大きさで書き出す。 */
+  fontFit: boolean
 }

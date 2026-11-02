@@ -78,6 +78,54 @@ describe('buildFont', () => {
     expect(kana.ulCodePageRange1 & (1 << 17)).not.toBe(0)
   })
 
+  describe('プレビューの大きさで書き出す', () => {
+    // 制作エリアの中央に小さく描いた、16マスの枠の文字
+    const frame = { ...line(-8, -8, -8, 8, 1), color: CLEAR }
+    const frameRight = { ...line(8, -8, 8, 8, 1), color: CLEAR }
+    const small = (...strokes: Stroke[]): Drawing => ({ strokes: [frame, frameRight, ...strokes], fills: [] })
+
+    it('枠が1文字の枠いっぱいになり、基準線の上下に収まる', async () => {
+      const { buildFont } = await import('./font')
+      const font = opentype.parse(buildFont('Test', { あ: small(line(-8, 0, 8, 0, 1)) }, true))
+      const box = font.charToGlyph('あ').getBoundingBox()
+      const scale = 940 / 170
+      expect(box.x1).toBeCloseTo(500 - 85 * scale, -1)
+      expect(box.x2).toBeCloseTo(500 + 85 * scale, -1)
+      expect((box.y1 + box.y2) / 2).toBeCloseTo(380, -1)
+      expect(box.y2 - box.y1).toBeCloseTo(10 * scale, -1)
+    })
+
+    it('全文字に同じ倍率がかかるので、小さい文字は小さいまま残る', async () => {
+      const { buildFont } = await import('./font')
+      const glyphs = { あ: { strokes: [line(-8, 0, 8, 0, 1)], fills: [] }, '・': { strokes: [line(-1, 0, 1, 0, 1)], fills: [] } }
+      const font = opentype.parse(buildFont('Test', glyphs, true))
+      const big = font.charToGlyph('あ').getBoundingBox()
+      const dot = font.charToGlyph('・').getBoundingBox()
+      expect((dot.x2 - dot.x1) / (big.x2 - big.x1)).toBeCloseTo(3 / 17, 1)
+      expect((dot.x1 + dot.x2) / 2).toBeCloseTo(500, -1)
+    })
+
+    it('枠いっぱいの英字の幅は全角と同じになる', async () => {
+      const { buildFont } = await import('./font')
+      const font = opentype.parse(buildFont('Test', { あ: small(), A: small(line(-8, 0, 8, 0, 1)) }, true))
+      expect(font.charToGlyph('A').advanceWidth).toBe(1000)
+      expect(font.charToGlyph('あ').advanceWidth).toBe(1000)
+    })
+
+    it('丸みは拡大しても滑らかなまま', async () => {
+      const { outline } = await import('./font')
+      const dot: Drawing = { strokes: [line(0, 0, 0.5, 0, 1)], fills: [] }
+      expect(outline(dot, 5)[0].length).toBeGreaterThan(outline(dot)[0].length)
+    })
+
+    it('大きさを変えなければ、制作エリアどおりになる', async () => {
+      const { buildFont } = await import('./font')
+      const bar: Drawing = { strokes: [line(0, -20, 0, 20)], fills: [] }
+      const font = opentype.parse(buildFont('Test', { あ: bar }))
+      expect(font.charToGlyph('あ').getBoundingBox().y2).toBe(590)
+    })
+  })
+
   it('作ったフォントを読み戻せる', async () => {
     const { buildFont, outline } = await import('./font')
     const strokes = [line(-20, -20, 20, -20), line(20, -20, 20, 20), line(20, 20, -20, 20), line(-20, 20, -20, -20)]

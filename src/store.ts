@@ -28,6 +28,7 @@ const defaultSettings: Settings = {
   mirrorY: false,
   chain: true,
   inputMode: matchMedia('(pointer: coarse)').matches ? 'touch' : 'mouse',
+  fontFit: true,
 }
 
 class Store {

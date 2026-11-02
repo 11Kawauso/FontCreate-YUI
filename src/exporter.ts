@@ -54,7 +54,7 @@ export async function exportZip(): Promise<void> {
 /** フォントのインストールファイル(.otf)にする。 */
 export async function exportFont(): Promise<void> {
   const { buildFont } = await import('./font')
-  const buffer = buildFont(store.fontName, store.glyphs)
+  const buffer = buildFont(store.fontName, store.glyphs, store.settings.fontFit)
   download(new Blob([buffer], { type: 'font/otf' }), `${safeName(store.fontName)}.otf`)
 }
 

@@ -8,6 +8,10 @@ import { scrollArea } from './scrollbar'
 
 const PREVIEW_SIZE = 180
 const THUMB_SIZE = 44
+const FONT_SIZES = [
+  { fit: true, label: 'プレビューどおり' },
+  { fit: false, label: '制作エリアどおり' },
+]
 
 /** 保存していない絵が消えないように確認する。続けてよければ true。 */
 async function confirmDiscard(): Promise<boolean> {
@@ -252,7 +256,15 @@ export function buildRight(root: HTMLElement): void {
     }
   }
 
+  const fitButtons = FONT_SIZES.map((s) =>
+    h('button', { class: 'seg-btn seg-text', type: 'button', onclick: () => store.set({ fontFit: s.fit }) }, s.label),
+  )
+  const syncFit = () => {
+    fitButtons.forEach((b, i) => b.classList.toggle('active', FONT_SIZES[i].fit === store.settings.fontFit))
+  }
+
   const { root: tables, refresh } = buildTables()
+  store.on('settings', syncFit)
   store.on('drawing', () => {
     paintPreview()
     syncStatus()
@@ -283,6 +295,20 @@ export function buildRight(root: HTMLElement): void {
       h('label', { class: 'field' }, h('span', { class: 'field-head' }, 'フォント名'), nameInput),
       h(
         'div',
+        { class: 'field' },
+        h(
+          'div',
+          { class: 'field-head' },
+          'フォントの大きさ',
+          helpMark(
+            '「プレビューどおり」は、保存した全文字を合わせた範囲が1文字の枠いっぱいになるように拡大して書き出します。全文字に同じ倍率をかけるので、文字どうしの大きさの比や線の太さの比は変わりません。透明な線もこの範囲に含みます。「制作エリアどおり」は、制作エリア全体を1文字の枠として、描いた大きさと基準線の位置のまま書き出します。',
+            'フォントの大きさのヘルプ',
+          ),
+        ),
+        h('div', { class: 'seg seg-two' }, ...fitButtons),
+      ),
+      h(
+        'div',
         { class: 'btn-row' },
         h('button', { class: 'btn', type: 'button', onclick: needGlyphs(exportProject) }, 'まとめて保存'),
         h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, '読み込む'),
@@ -304,6 +330,7 @@ export function buildRight(root: HTMLElement): void {
   )
   paintPreview()
   syncStatus()
+  syncFit()
   refresh()
 }
 
