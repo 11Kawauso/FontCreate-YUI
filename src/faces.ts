@@ -1,4 +1,4 @@
-import { pointInRing, ringArea } from './geometry'
+import { TOUCH, distToSegment, pointInRing, projectOnSegment, ringArea } from './geometry'
 import type { Vec } from './types'
 
 /*
@@ -76,9 +76,26 @@ function splitSegments(s: Seg, t: Seg): void {
   t.ts.push(Math.min(1, Math.max(0, v)))
 }
 
+/** 線の端が別の線の途中に乗っていたら、そこを頂点にしてつなぐ。曲線は折れ線なので、少しずれていても拾う。 */
+function weld(polylines: Vec[][]): Vec[][] {
+  return polylines.map((line, k) => {
+    const ends = polylines.flatMap((other, m) => (m === k ? [] : [other[0], other[other.length - 1]]))
+    const out = [line[0]]
+    for (let i = 0; i + 1 < line.length; i++) {
+      const a = line[i]
+      const b = line[i + 1]
+      const apart = (e: Vec, v: Vec) => Math.hypot(e.x - v.x, e.y - v.y) > CELL
+      const on = ends.filter((e) => distToSegment(e, a, b) < TOUCH && apart(e, a) && apart(e, b))
+      on.sort((p, q) => projectOnSegment(p, a, b) - projectOnSegment(q, a, b))
+      out.push(...on, b)
+    }
+    return out
+  })
+}
+
 function buildCycles(polylines: Vec[][]): Cycle[] {
   const segs: Seg[] = []
-  for (const line of polylines) {
+  for (const line of weld(polylines)) {
     for (let i = 0; i + 1 < line.length; i++) {
       const a = line[i]
       const b = line[i + 1]

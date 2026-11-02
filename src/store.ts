@@ -16,6 +16,8 @@ const defaultSettings: Settings = {
   sweep: 90,
   width: 1,
   eraserSize: 3,
+  eraserMode: 'whole',
+  clearLine: false,
   lineColor: '#1f1f1f',
   fillColor: '#1f1f1f',
   rulerColor: '#e5484d',

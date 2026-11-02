@@ -57,7 +57,7 @@ async function start(): Promise<void> {
     } else if (key === 'escape') {
       editor.cancelLine()
       slot.hide()
-    } else if (!mod && /^[1-6]$/.test(key)) {
+    } else if (!mod && /^[1-9]$/.test(key) && TOOL_ITEMS[Number(key) - 1]) {
       selectItem(TOOL_ITEMS[Number(key) - 1])
     }
   })

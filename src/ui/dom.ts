@@ -28,6 +28,7 @@ export const icons = {
   curveRight: icon(`<path d="M9 20C19 16 19 8 9 4"/>${dot(9, 20)}${dot(9, 4)}`),
   fill: icon('<path d="M12 3.5S5.5 10.8 5.5 15a6.5 6.5 0 0 0 13 0C18.5 10.8 12 3.5 12 3.5Z" fill="currentColor"/>'),
   eraser: icon('<path d="M8.5 20H20M4.6 14.4l8.6-8.6a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8L12 19.5a2 2 0 0 1-1.4.5H8.8a2 2 0 0 1-1.4-.6l-2.8-2.8a1.6 1.6 0 0 1 0-2.2ZM9.2 9.8l5 5"/>'),
+  eraserPiece: icon(`<path d="M5 20.5h14"/>${dot(4, 20.5)}${dot(20, 20.5)}<path d="m6.3 11.6 6.4-6.4a1.6 1.6 0 0 1 2.2 0l2.6 2.6a1.6 1.6 0 0 1 0 2.2l-5.3 5.3a1.6 1.6 0 0 1-1.1.5H9a1.6 1.6 0 0 1-1.1-.5l-1.6-1.6a1.6 1.6 0 0 1 0-2.1ZM9.8 8.1l4 4"/>`),
   ruler: icon('<path d="M3.5 16.5 16.5 3.5l4 4-13 13ZM7.5 12.5l2 2M10.5 9.5l2.6 2.6M13.5 6.5l2 2"/>'),
   mouse: icon('<rect x="6.5" y="3" width="11" height="18" rx="5.5"/><path d="M12 7v3.5"/>'),
   touchpad: icon('<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M12 14.5v5"/>'),

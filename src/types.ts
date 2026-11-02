@@ -6,6 +6,8 @@ export interface Vec {
 export type Tool = 'line' | 'fill' | 'eraser' | 'ruler'
 export type Curve = 'straight' | 'left' | 'right'
 export type InputMode = 'mouse' | 'touchpad' | 'touch'
+/** whole は引いた線ごと、piece は接点から接点までを消す。 */
+export type EraserMode = 'whole' | 'piece'
 
 /** 2点を結ぶ線。sweep は円弧の開き角度(度)で、0 が直線、正が進行方向の左、負が右に曲がる。 */
 export interface Stroke {
@@ -39,6 +41,8 @@ export interface Settings {
   sweep: number
   width: number
   eraserSize: number
+  eraserMode: EraserMode
+  clearLine: boolean
   lineColor: string
   fillColor: string
   rulerColor: string

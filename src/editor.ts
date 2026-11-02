@@ -2,8 +2,10 @@ import { findRegion } from './faces'
 import {
   BASELINE_Y,
   BOARD,
+  CLEAR,
   distToPolyline,
   distToSegment,
+  isClear,
   mirrorStroke,
   mirrors,
   pointInRing,
@@ -11,9 +13,11 @@ import {
   ringArea,
   sameStroke,
   strokePoints,
+  subStroke,
 } from './geometry'
-import { fitCanvas, paintDrawing, traceStroke } from './render'
+import { fitCanvas, paintClearLine, paintDrawing, traceStroke } from './render'
 import { store } from './store'
+import { findPiece, removePiece } from './trim'
 import type { Fill, Ruler, Stroke, Vec } from './types'
 import { Slot } from './ui/slot'
 import { toast } from './ui/feedback'
@@ -255,9 +259,9 @@ export class Editor {
   }
 
   private newStroke(a: Vec, b: Vec): Stroke {
-    const { curve, sweep, width, lineColor } = store.settings
+    const { curve, sweep, width, lineColor, clearLine } = store.settings
     const signed = curve === 'left' ? sweep : curve === 'right' ? -sweep : 0
-    return { a, b, sweep: signed, width, color: lineColor }
+    return { a, b, sweep: signed, width, color: clearLine ? CLEAR : lineColor }
   }
 
   private addStrokes(a: Vec, b: Vec): void {
@@ -281,7 +285,8 @@ export class Editor {
 
   private fillAt(p: Vec): void {
     const { fillColor, mirrorX, mirrorY } = store.settings
-    const lines = store.drawing.strokes.map(strokePoints)
+    // 透明な線は文字の一部ではないので、囲いにならない
+    const lines = store.drawing.strokes.filter((s) => !isClear(s)).map(strokePoints)
     const targets = [p, ...mirrors(mirrorX, mirrorY).map((m) => m.map(p))]
     const added: Fill[] = []
     for (const t of targets) {
@@ -318,10 +323,15 @@ export class Editor {
     this.lastErase = p
   }
 
+  private eraserSpots(p: Vec): Vec[] {
+    const { mirrorX, mirrorY } = store.settings
+    return [p, ...mirrors(mirrorX, mirrorY).map((m) => m.map(p))]
+  }
+
   private eraseAt(p: Vec): void {
-    const { eraserSize, mirrorX, mirrorY, showRulers } = store.settings
+    const { eraserSize, eraserMode, showRulers } = store.settings
     const r = eraserSize / 2
-    const spots = [p, ...mirrors(mirrorX, mirrorY).map((m) => m.map(p))]
+    const spots = this.eraserSpots(p)
     const { strokes, fills } = store.drawing
     const hitStroke = (s: Stroke) => spots.some((q) => distToPolyline(q, strokePoints(s)) <= r + s.width / 2)
     const hitFill = (f: Fill) =>
@@ -332,13 +342,23 @@ export class Editor {
       )
     const hitRuler = (u: Ruler) => showRulers && distToSegment(p, u.a, u.b) <= r
 
-    const nextStrokes = strokes.filter((s) => !hitStroke(s))
-    const nextFills = fills.filter((f) => !hitFill(f))
-    const nextRulers = store.rulers.filter((u) => !hitRuler(u))
+    const piecewise = eraserMode === 'piece'
+    let nextStrokes = strokes
+    if (piecewise) {
+      for (const q of spots) {
+        const piece = findPiece(nextStrokes, q, r)
+        if (piece) nextStrokes = removePiece(nextStrokes, piece)
+      }
+    } else {
+      nextStrokes = strokes.filter((s) => !hitStroke(s))
+    }
+    const linesChanged = piecewise ? nextStrokes !== strokes : nextStrokes.length !== strokes.length
+    // 接点まで消すときは線だけを狙えるように、線を消した操作の間は塗りと定規に触らない
+    const linesOnly = piecewise && (linesChanged || this.erased)
+    const nextFills = linesOnly ? fills : fills.filter((f) => !hitFill(f))
+    const nextRulers = linesOnly ? store.rulers : store.rulers.filter((u) => !hitRuler(u))
     const changed =
-      nextStrokes.length !== strokes.length ||
-      nextFills.length !== fills.length ||
-      nextRulers.length !== store.rulers.length
+      linesChanged || nextFills.length !== fills.length || nextRulers.length !== store.rulers.length
     if (!changed) return
     this.erased = true
     store.drawing = { strokes: nextStrokes, fills: nextFills }
@@ -509,11 +529,30 @@ export class Editor {
     ctx.translate(ox, oy)
     ctx.scale(s, s)
     paintDrawing(ctx, store.drawing)
+    for (const stroke of store.drawing.strokes) if (isClear(stroke)) paintClearLine(ctx, stroke, s)
+    this.drawTargetPieces()
     ctx.restore()
 
     if (set.showRulers) for (const r of store.rulers) this.drawRuler(r)
     this.drawRubberBand()
     this.drawCursor()
+  }
+
+  /** 接点まで消すとき、今押すと消える部分を赤く示す。 */
+  private drawTargetPieces(): void {
+    const { ctx, s } = this
+    const { tool, eraserMode, eraserSize } = store.settings
+    if (tool !== 'eraser' || eraserMode !== 'piece' || !this.cursor) return
+    const { strokes } = store.drawing
+    for (const q of this.eraserSpots(this.cursor)) {
+      const piece = findPiece(strokes, q, eraserSize / 2)
+      if (!piece) continue
+      const stroke = strokes[piece.index]
+      traceStroke(ctx, subStroke(stroke, piece.from, piece.to))
+      ctx.strokeStyle = '#e5484d'
+      ctx.lineWidth = Math.max(stroke.width, 2 / s)
+      ctx.stroke()
+    }
   }
 
   private drawDots(): void {
@@ -656,6 +695,10 @@ export class Editor {
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     for (const c of copies) {
+      if (isClear(c)) {
+        paintClearLine(ctx, c, s)
+        continue
+      }
       traceStroke(ctx, c)
       ctx.strokeStyle = c.color
       ctx.lineWidth = c.width

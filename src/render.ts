@@ -1,4 +1,4 @@
-import { drawingBounds, strokePoints } from './geometry'
+import { drawingBounds, isClear, strokePoints } from './geometry'
 import type { Drawing, Stroke } from './types'
 
 export function traceStroke(ctx: CanvasRenderingContext2D, s: Stroke): void {
@@ -22,6 +22,7 @@ export function paintDrawing(ctx: CanvasRenderingContext2D, d: Drawing): void {
     ctx.fill('evenodd')
   }
   for (const s of d.strokes) {
+    if (isClear(s)) continue
     traceStroke(ctx, s)
     ctx.strokeStyle = s.color
     ctx.lineWidth = s.width
@@ -29,7 +30,20 @@ export function paintDrawing(ctx: CanvasRenderingContext2D, d: Drawing): void {
   }
 }
 
-/** 描いたものが size 四方にぴったり収まるように描く。 */
+/** 透明な線の目印。制作エリアにだけ出し、プレビューやPNGには写らない。 */
+export function paintClearLine(ctx: CanvasRenderingContext2D, s: Stroke, scale: number): void {
+  traceStroke(ctx, s)
+  ctx.strokeStyle = 'rgba(70, 120, 200, 0.2)'
+  ctx.lineWidth = s.width
+  ctx.stroke()
+  ctx.strokeStyle = '#4678c8'
+  ctx.lineWidth = 1 / scale
+  ctx.setLineDash([5 / scale, 4 / scale])
+  ctx.stroke()
+  ctx.setLineDash([])
+}
+
+/** 描いたものが size 四方にぴったり収まるように描く。透明な線も範囲に含める。 */
 export function paintFitted(ctx: CanvasRenderingContext2D, d: Drawing, size: number): void {
   const b = drawingBounds(d)
   if (!b) return

@@ -1,7 +1,7 @@
 import ClipperLib from 'clipper-lib'
 import opentype from 'opentype.js'
 import { setOf } from './charset'
-import { BASELINE_Y, strokePoints } from './geometry'
+import { BASELINE_Y, drawingBounds, isClear, strokePoints } from './geometry'
 import type { Drawing, Vec } from './types'
 
 /*
@@ -31,13 +31,14 @@ function union(paths: IntPath[], fill: ClipperLib.PolyFillType): IntPath[] {
   return out
 }
 
-/** 線の太さと塗りをすべて1つの輪郭に合体させる。 */
+/** 線の太さと塗りをすべて1つの輪郭に合体させる。透明な線は輪郭に入れない。 */
 export function outline(d: Drawing): IntPath[] {
   const parts: IntPath[] = []
   for (const f of d.fills) {
     parts.push(...union(f.rings.map((r) => r.map(toInt)), ClipperLib.PolyFillType.pftEvenOdd))
   }
   for (const s of d.strokes) {
+    if (isClear(s)) continue
     const offset = new ClipperLib.ClipperOffset(2, PRECISION / 2)
     offset.AddPath(strokePoints(s).map(toInt), ClipperLib.JoinType.jtRound, ClipperLib.EndType.etOpenRound)
     const out: IntPath[] = []
@@ -50,10 +51,11 @@ export function outline(d: Drawing): IntPath[] {
 
 function glyphFor(char: string, drawing: Drawing): opentype.Glyph {
   const paths = outline(drawing)
-  const xs = paths.flat().map((p) => p.X / PRECISION)
-  const minX = Math.min(...xs)
-  const maxX = Math.max(...xs)
-  const proportional = setOf(char).proportional && xs.length > 0
+  // 文字の幅は透明な線まで含めた範囲で決まる
+  const area = drawingBounds(drawing)
+  const minX = (area?.minX ?? 0) * UNIT
+  const maxX = (area?.maxX ?? 0) * UNIT
+  const proportional = setOf(char).proportional && area !== null
   const shift = proportional ? BEARING - minX : EM / 2
   const path = new opentype.Path()
   for (const ring of paths) {

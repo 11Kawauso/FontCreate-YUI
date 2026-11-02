@@ -4,14 +4,30 @@ import type { Drawing, Stroke, Vec } from './types'
 export const BOARD = 50
 /** フォントにしたときに文字の足元がそろう高さ。 */
 export const BASELINE_Y = 38
+/** 透明な線の色。PNGやフォントには写らず、文字の範囲を広げるだけの線になる。 */
+export const CLEAR = 'transparent'
+/** これより近ければ線どうしが触れているとみなす距離。曲線を折れ線にしたときの誤差を吸収する。 */
+export const TOUCH = 0.15
 
-/** 線を折れ線の点列にする。曲線は円弧を細かく刻む。 */
-export function strokePoints(s: Stroke): Vec[] {
-  if (!s.sweep) return [s.a, s.b]
+export function isClear(s: Stroke): boolean {
+  return s.color === CLEAR
+}
+
+interface Arc {
+  cx: number
+  cy: number
+  vx: number
+  vy: number
+  sweep: number
+}
+
+/** 曲線の円の中心と、中心から始点へのベクトル。直線なら null。 */
+function arcOf(s: Stroke): Arc | null {
+  if (!s.sweep) return null
   const dx = s.b.x - s.a.x
   const dy = s.b.y - s.a.y
   const len = Math.hypot(dx, dy)
-  if (len === 0) return [s.a, s.b]
+  if (len === 0) return null
   const sweep = (s.sweep * Math.PI) / 180
   const half = Math.abs(sweep) / 2
   const radius = len / (2 * Math.sin(half))
@@ -22,18 +38,36 @@ export function strokePoints(s: Stroke): Vec[] {
   const d = radius * Math.cos(half)
   const cx = (s.a.x + s.b.x) / 2 - lx * d * side
   const cy = (s.a.y + s.b.y) / 2 - ly * d * side
-  const vx = s.a.x - cx
-  const vy = s.a.y - cy
-  const n = Math.max(6, Math.ceil(Math.abs(s.sweep) / 4))
+  return { cx, cy, vx: s.a.x - cx, vy: s.a.y - cy, sweep }
+}
+
+function pointOnArc(arc: Arc, ratio: number): Vec {
+  const c = Math.cos(arc.sweep * ratio)
+  const k = Math.sin(arc.sweep * ratio)
+  return { x: arc.cx + arc.vx * c - arc.vy * k, y: arc.cy + arc.vx * k + arc.vy * c }
+}
+
+/** 線を折れ線の点列にする。曲線は円弧を細かく刻む。 */
+export function strokePoints(s: Stroke): Vec[] {
+  const arc = arcOf(s)
+  if (!arc) return [s.a, s.b]
+  // 分割数を偶数にして、曲線の頂点が必ず点になるようにする(別の線と頂点で接するときに拾える)
+  const n = Math.max(3, Math.ceil(Math.abs(s.sweep) / 8)) * 2
   const pts: Vec[] = [s.a]
-  for (let i = 1; i < n; i++) {
-    const t = (sweep * i) / n
-    const c = Math.cos(t)
-    const k = Math.sin(t)
-    pts.push({ x: cx + vx * c - vy * k, y: cy + vx * k + vy * c })
-  }
+  for (let i = 1; i < n; i++) pts.push(pointOnArc(arc, i / n))
   pts.push(s.b)
   return pts
+}
+
+/** 線の from〜to(0が始点、1が終点)の部分を、同じ形の線として切り出す。 */
+export function subStroke(s: Stroke, from: number, to: number): Stroke {
+  const arc = arcOf(s)
+  const at = (t: number): Vec => {
+    if (t <= 0) return s.a
+    if (t >= 1) return s.b
+    return arc ? pointOnArc(arc, t) : { x: s.a.x + (s.b.x - s.a.x) * t, y: s.a.y + (s.b.y - s.a.y) * t }
+  }
+  return { ...s, a: at(from), b: at(to), sweep: s.sweep * (to - from) }
 }
 
 export interface Bounds {
@@ -63,12 +97,17 @@ export function isEmpty(d: Drawing): boolean {
   return d.strokes.length === 0 && d.fills.length === 0
 }
 
-export function distToSegment(p: Vec, a: Vec, b: Vec): number {
+/** 線分 ab の上で p に一番近い位置(0〜1)。 */
+export function projectOnSegment(p: Vec, a: Vec, b: Vec): number {
   const dx = b.x - a.x
   const dy = b.y - a.y
   const l2 = dx * dx + dy * dy
-  const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2))
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+  return l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2))
+}
+
+export function distToSegment(p: Vec, a: Vec, b: Vec): number {
+  const t = projectOnSegment(p, a, b)
+  return Math.hypot(p.x - (a.x + t * (b.x - a.x)), p.y - (a.y + t * (b.y - a.y)))
 }
 
 export function distToPolyline(p: Vec, pts: Vec[]): number {

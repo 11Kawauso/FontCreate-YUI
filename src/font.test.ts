@@ -1,6 +1,7 @@
 import opentype from 'opentype.js'
 import { describe, expect, it, vi } from 'vitest'
 import { findRegion } from './faces'
+import { CLEAR } from './geometry'
 import type { Drawing, Stroke } from './types'
 
 vi.stubGlobal('matchMedia', () => ({ matches: false }))
@@ -47,6 +48,20 @@ describe('buildFont', () => {
     expect(font.charToGlyph('/').unicode).toBe(0x2f)
     expect(font.charToGlyph('、').advanceWidth).toBe(1000)
     expect(font.charToGlyph('？').advanceWidth).toBe(1000)
+  })
+
+  it('透明な線は形にならず、文字の幅だけ広げる', async () => {
+    const { buildFont, outline } = await import('./font')
+    const bar = line(0, -20, 0, 20)
+    const clear = { ...line(-30, 0, -30, 1), color: CLEAR }
+    const framed: Drawing = { strokes: [bar, clear], fills: [] }
+    expect(outline(framed)).toEqual(outline({ strokes: [bar], fills: [] }))
+
+    const font = opentype.parse(buildFont('Test', { I: framed, J: { strokes: [clear], fills: [] } }))
+    const glyph = font.charToGlyph('I')
+    expect(glyph.advanceWidth).toBe(320 + 120)
+    expect(glyph.getBoundingBox().x1).toBe(360)
+    expect(font.charToGlyph('J').path.commands).toHaveLength(0)
   })
 
   it('日本語の名前でも管理名は半角英数字になる', async () => {

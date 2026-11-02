@@ -281,6 +281,14 @@ svg {
   color: #fff;
 }
 
+.seg-two {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.seg-text {
+  font-size: 12.5px;
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -361,6 +369,10 @@ input[type='range']::-moz-range-thumb {
   gap: 6px;
   font-size: 12.5px;
   cursor: pointer;
+}
+
+.swatch.dim {
+  opacity: 0.4;
 }
 
 .swatch input {

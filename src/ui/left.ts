@@ -1,6 +1,6 @@
 import { isEmpty } from '../geometry'
 import { store } from '../store'
-import type { Curve, Settings, Tool } from '../types'
+import type { Curve, EraserMode, Settings, Tool } from '../types'
 import { h, icons } from './dom'
 import { ask, helpMark } from './feedback'
 import { scrollArea } from './scrollbar'
@@ -20,6 +20,11 @@ const CURVES: { curve: Curve; label: string; icon: string }[] = [
   { curve: 'straight', label: '直線', icon: icons.line },
   { curve: 'left', label: '左に曲げる', icon: icons.curveLeft },
   { curve: 'right', label: '右に曲げる', icon: icons.curveRight },
+]
+
+const ERASER_MODES: { mode: EraserMode; label: string }[] = [
+  { mode: 'whole', label: '線ごと' },
+  { mode: 'piece', label: '接点まで' },
 ]
 
 function section(title: string, help: string | null, ...kids: Node[]): HTMLElement {
@@ -110,8 +115,34 @@ export function buildLeft(root: HTMLElement, onFit: () => void): void {
       onclick: () => store.set({ curve: c.curve }),
     }),
   )
+  const eraserButtons = ERASER_MODES.map((m) =>
+    h(
+      'button',
+      {
+        class: 'seg-btn seg-text',
+        type: 'button',
+        onclick: () => store.set({ eraserMode: m.mode }),
+      },
+      m.label,
+    ),
+  )
+  const eraserModeField = h(
+    'div',
+    { class: 'field' },
+    h(
+      'div',
+      { class: 'field-head' },
+      '消し方',
+      helpMark(
+        '「線ごと」は、触れた線を1本まるごと消します。「接点まで」は、触れた線のうち、ほかの線と交わる点やつながる点から次の点までを消します。はみ出した部分だけを消したいときに使います。消える部分は押す前に赤く表示されます。線が近くにないときは、塗りや定規を消します。',
+        '消し方のヘルプ',
+      ),
+    ),
+    h('div', { class: 'seg seg-two' }, ...eraserButtons),
+  )
   const sweepField = slider('曲がり具合', 'sweep', 15, 180, 15, '°')
   const eraserField = slider('消しゴムの大きさ', 'eraserSize', 1, 20, 1, 'マス')
+  const lineSwatch = colorField('線', 'lineColor')
 
   const undoBtn = h('button', { class: 'btn icon-btn', type: 'button', onclick: () => store.undo() })
   undoBtn.innerHTML = `${icons.undo}<span>元に戻す</span>`
@@ -139,11 +170,14 @@ export function buildLeft(root: HTMLElement, onFit: () => void): void {
   )
 
   const sync = () => {
-    const { tool, curve } = store.settings
+    const { tool, curve, eraserMode, clearLine } = store.settings
     toolButtons.forEach((b, i) => b.classList.toggle('active', TOOLS[i].tool === tool))
     curveButtons.forEach((b, i) => b.classList.toggle('active', CURVES[i].curve === curve))
+    eraserButtons.forEach((b, i) => b.classList.toggle('active', ERASER_MODES[i].mode === eraserMode))
     sweepField.classList.toggle('dim', curve === 'straight')
     eraserField.classList.toggle('hidden', tool !== 'eraser')
+    eraserModeField.classList.toggle('hidden', tool !== 'eraser')
+    lineSwatch.classList.toggle('dim', clearLine)
   }
   const syncHistory = () => {
     undoBtn.disabled = !store.canUndo
@@ -158,7 +192,7 @@ export function buildLeft(root: HTMLElement, onFit: () => void): void {
 
   const { host, body } = scrollArea('left-scroll')
   body.append(
-    section('道具', null, h('div', { class: 'tool-grid' }, ...toolButtons), eraserField),
+    section('道具', null, h('div', { class: 'tool-grid' }, ...toolButtons), eraserModeField, eraserField),
     section(
       '線の形',
       '「左に曲げる」「右に曲げる」は、線を引く向きから見て左右どちらに膨らませるかを決めます。曲がり具合は円の何度分かを表します。90°で引いた線を4本つなぐと、きれいな円になります。',
@@ -169,7 +203,12 @@ export function buildLeft(root: HTMLElement, onFit: () => void): void {
     section(
       '色',
       null,
-      h('div', { class: 'swatches' }, colorField('線', 'lineColor'), colorField('塗り', 'fillColor'), colorField('定規', 'rulerColor')),
+      h('div', { class: 'swatches' }, lineSwatch, colorField('塗り', 'fillColor'), colorField('定規', 'rulerColor')),
+      toggle(
+        '透明な線',
+        'clearLine',
+        'オンの間は、見えない線を引きます。制作エリアでは青い点線で表示されますが、PNGやフォントには写りません。プレビューとPNGは、この線まで含めた範囲で大きさが決まるので、文字の周りに余白を作れます。英数字と半角記号は、フォントの文字幅もこの線まで広がります。塗りつぶしの囲いにはなりません。',
+      ),
     ),
     section(
       '表示',
