@@ -38,6 +38,17 @@ describe('buildFont', () => {
     expect(box.y1).toBe(170)
   })
 
+  it('数字と半角記号は文字の幅に合わせ、全角記号は全角の幅になる', async () => {
+    const { buildFont } = await import('./font')
+    const bar: Drawing = { strokes: [line(0, -20, 0, 20)], fills: [] }
+    const font = opentype.parse(buildFont('Test', { '1': bar, '!': bar, '/': bar, '、': bar, '？': bar }))
+    expect(font.charToGlyph('1').advanceWidth).toBe(20 + 120)
+    expect(font.charToGlyph('!').advanceWidth).toBe(20 + 120)
+    expect(font.charToGlyph('/').unicode).toBe(0x2f)
+    expect(font.charToGlyph('、').advanceWidth).toBe(1000)
+    expect(font.charToGlyph('？').advanceWidth).toBe(1000)
+  })
+
   it('日本語の名前でも管理名は半角英数字になる', async () => {
     const { postScriptName } = await import('./font')
     expect(postScriptName('My Font')).toBe('MyFont-Regular')

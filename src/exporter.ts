@@ -1,5 +1,5 @@
 import { zipSync } from 'fflate'
-import { CHAR_SETS, setOf } from './charset'
+import { CHAR_SETS, fileNameOf, setOf } from './charset'
 import { paintFitted } from './render'
 import { store } from './store'
 import type { Drawing, Ruler } from './types'
@@ -30,7 +30,8 @@ function safeName(s: string): string {
 
 /** 右上のプレビューと同じ絵を、背景透過のPNGにする。 */
 export async function exportPng(): Promise<void> {
-  const name = store.activeChar ? setOf(store.activeChar).folder + '_' + store.activeChar : '文字'
+  const char = store.activeChar
+  const name = char ? `${setOf(char).folder}_${fileNameOf(char)}` : '文字'
   download(await toPng(store.drawing), `${name}.png`)
 }
 
@@ -42,7 +43,7 @@ export async function exportZip(): Promise<void> {
       for (const char of group.chars) {
         const glyph = store.glyphs[char]
         if (!glyph) continue
-        files[`${set.folder}/${char}.png`] = new Uint8Array(await (await toPng(glyph)).arrayBuffer())
+        files[`${set.folder}/${fileNameOf(char)}.png`] = new Uint8Array(await (await toPng(glyph)).arrayBuffer())
       }
     }
   }
