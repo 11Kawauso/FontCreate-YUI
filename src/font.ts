@@ -15,6 +15,9 @@ const DESCENDER = ASCENDER - EM
 const BEARING = 60
 /** 輪郭計算は小数第1位まで整数で扱う */
 const PRECISION = 10
+/** 対応する文字の範囲の印。JIS があると Word などの日本語フォント欄に出る。 */
+const CODE_PAGE_LATIN = 1
+const CODE_PAGE_JIS = 1 << 17
 
 type IntPath = { X: number; Y: number }[]
 
@@ -76,13 +79,25 @@ function glyphFor(char: string, drawing: Drawing): opentype.Glyph {
   })
 }
 
+function nameHash(name: string): string {
+  let hash = 0
+  for (const c of name) hash = (Math.imul(hash, 31) + c.codePointAt(0)!) >>> 0
+  return hash.toString(16).toUpperCase()
+}
+
 /** フォント内部の管理名は半角英数字のみ。日本語の名前は番号に置き換える。 */
 export function postScriptName(name: string): string {
   const ascii = name.replace(/[^A-Za-z0-9]/g, '')
   if (ascii && ascii.length === name.replace(/\s/g, '').length) return `${ascii}-Regular`
-  let hash = 0
-  for (const c of name) hash = (Math.imul(hash, 31) + c.codePointAt(0)!) >>> 0
-  return `YUIFont${hash.toString(16).toUpperCase()}-Regular`
+  return `YUIFont${nameHash(name)}-Regular`
+}
+
+/**
+ * フォントの英語名。ここに日本語が入ると opentype.js が間違った検査値を書き、
+ * Windows に「有効なフォントではありません」と拒否されるので、日本語の名前は別に持たせる。
+ */
+export function latinFamily(name: string): string {
+  return /^[\x20-\x7e]+$/.test(name) ? name : `YUI Font ${nameHash(name)}`
 }
 
 export function buildFont(name: string, glyphs: Record<string, Drawing>): ArrayBuffer {
@@ -93,14 +108,31 @@ export function buildFont(name: string, glyphs: Record<string, Drawing>): ArrayB
   ]
   for (const char of Object.keys(glyphs).sort()) list.push(glyphFor(char, glyphs[char]))
   const family = name.trim() || 'YUI Font'
+  const latin = latinFamily(family)
+  const boxes = list.map((g) => g.getBoundingBox())
+  const japanese = Object.keys(glyphs).some((c) => c.codePointAt(0)! >= 0x3000)
   const font = new opentype.Font({
-    familyName: family,
+    familyName: latin,
     styleName: 'Regular',
     postScriptName: postScriptName(family),
+    manufacturer: 'FontCreate-YUI',
     unitsPerEm: EM,
     ascender: ASCENDER,
     descender: DESCENDER,
     glyphs: list,
   })
+  Object.assign(font.tables.os2, {
+    usWeightClass: 400,
+    // Windows はこの高さで行の高さと表示の切り取りを決める
+    usWinAscent: Math.max(ASCENDER, ...boxes.map((b) => b.y2)),
+    usWinDescent: Math.max(-DESCENDER, ...boxes.map((b) => -b.y1)),
+    ulCodePageRange1: japanese ? CODE_PAGE_LATIN | CODE_PAGE_JIS : CODE_PAGE_LATIN,
+  })
+  if (latin !== family) {
+    const { windows } = font.names as unknown as { windows: Record<string, Record<string, string>> }
+    windows.fontFamily.ja = family
+    windows.fontSubfamily.ja = 'Regular'
+    windows.fullName.ja = `${family} Regular`
+  }
   return font.toArrayBuffer()
 }

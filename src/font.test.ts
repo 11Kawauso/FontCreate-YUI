@@ -14,7 +14,70 @@ const line = (ax: number, ay: number, bx: number, by: number, width = 2): Stroke
   color: '#000',
 })
 
+/** 検査値が中身と合わない表の名前。Windows はこれが1つでもあるとフォントを拒否する。 */
+function wrongCheckSums(buffer: ArrayBuffer): string[] {
+  const view = new DataView(buffer)
+  const wrong: string[] = []
+  for (let i = 0; i < view.getUint16(4); i++) {
+    const at = 12 + i * 16
+    const tag = String.fromCharCode(...new Uint8Array(buffer, at, 4))
+    const start = view.getUint32(at + 8)
+    const length = view.getUint32(at + 12)
+    if (tag === 'head') continue // 中にファイル全体の検査値を持つので計算が別
+    let sum = 0
+    for (let p = 0; p < length; p += 4) {
+      let word = 0
+      for (let j = 0; j < 4; j++) word = word * 256 + (p + j < length ? view.getUint8(start + p + j) : 0)
+      sum = (sum + word) % 2 ** 32
+    }
+    if (sum !== view.getUint32(at + 4)) wrong.push(tag)
+  }
+  return wrong
+}
+
+function windowsNames(buffer: ArrayBuffer) {
+  const { names } = opentype.parse(buffer)
+  return (names as unknown as { windows: Record<string, Record<string, string>> }).windows
+}
+
 describe('buildFont', () => {
+  it('日本語の名前でもWindowsが読める形になる', async () => {
+    const { buildFont, latinFamily } = await import('./font')
+    const bar: Drawing = { strokes: [line(0, -20, 0, 20)], fills: [] }
+    const buffer = buildFont('四角五線 Font', { あ: bar })
+    expect(wrongCheckSums(buffer)).toEqual([])
+
+    const windows = windowsNames(buffer)
+    expect(windows.fontFamily.en).toBe(latinFamily('四角五線 Font'))
+    expect(windows.fontFamily.en).toMatch(/^[\x20-\x7e]+$/)
+    expect(windows.fontFamily.ja).toBe('四角五線 Font')
+    expect(windows.fullName.ja).toBe('四角五線 Font Regular')
+  })
+
+  it('半角の名前はそのまま使う', async () => {
+    const { buildFont } = await import('./font')
+    const bar: Drawing = { strokes: [line(0, -20, 0, 20)], fills: [] }
+    const windows = windowsNames(buildFont('My Font', { A: bar }))
+    expect(windows.fontFamily.en).toBe('My Font')
+    expect(windows.fontFamily.ja).toBeUndefined()
+  })
+
+  it('Windows用の行の高さが文字の枠全体を覆い、仮名があれば日本語フォントになる', async () => {
+    const { buildFont } = await import('./font')
+    const low: Drawing = { strokes: [line(0, 30, 0, 38)], fills: [] }
+    const tall: Drawing = { strokes: [line(0, -50, 0, 50, 10)], fills: [] }
+
+    const latin = opentype.parse(buildFont('Test', { A: low })).tables.os2
+    expect(latin.usWinAscent).toBe(880)
+    expect(latin.usWinDescent).toBe(120)
+    expect(latin.ulCodePageRange1).toBe(1)
+
+    const kana = opentype.parse(buildFont('Test', { あ: tall })).tables.os2
+    expect(kana.usWinAscent).toBe(930)
+    expect(kana.usWinDescent).toBe(170)
+    expect(kana.ulCodePageRange1 & (1 << 17)).not.toBe(0)
+  })
+
   it('作ったフォントを読み戻せる', async () => {
     const { buildFont, outline } = await import('./font')
     const strokes = [line(-20, -20, 20, -20), line(20, -20, 20, 20), line(20, 20, -20, 20), line(-20, 20, -20, -20)]
